@@ -20,18 +20,14 @@ def http(req, timeout=30):
         return None, type(e).__name__
 
 
-def brief(body, limit=220):
+def brief(body, limit=200):
     body = " ".join((body or "").split())
     return body[:limit]
 
 
-def check_alchemy():
-    key = os.environ.get("ALCHEMY_KEY", "")
-    if not key:
-        print("ALCHEMY: MISSING (secret not injected)", flush=True)
-        return
+def alchemy_probe(key, host, label):
     req = urllib.request.Request(
-        "https://eth-mainnet.g.alchemy.com/v2/" + key,
+        "https://" + host + "/v2/" + key,
         data=json.dumps(
             {"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}
         ).encode(),
@@ -45,16 +41,38 @@ def check_alchemy():
         except Exception:
             ok = False
         print(
-            "ALCHEMY: %s (http 200, eth_blockNumber %s)"
-            % ("PASS" if ok else "FAIL", "ok" if ok else "no result"),
+            "ALCHEMY %s: %s (http 200)" % (label, "PASS" if ok else "FAIL no-result"),
             flush=True,
         )
-    elif status is None:
-        print("ALCHEMY: ERROR (network: %s)" % body, flush=True)
-    else:
-        print(
-            "ALCHEMY: FAIL (http %s) body: %s" % (status, brief(body)), flush=True
-        )
+        return ok
+    if status is None:
+        print("ALCHEMY %s: ERROR (network: %s)" % (label, body), flush=True)
+        return False
+    print(
+        "ALCHEMY %s: FAIL (http %s) body: %s" % (label, status, brief(body)),
+        flush=True,
+    )
+    return False
+
+
+def check_alchemy():
+    key = os.environ.get("ALCHEMY_KEY", "")
+    if not key:
+        print("ALCHEMY: MISSING (secret not injected)", flush=True)
+        return
+    any_pass = False
+    for host, label in (
+        ("eth-mainnet.g.alchemy.com", "eth-mainnet"),
+        ("eth-sepolia.g.alchemy.com", "eth-sepolia"),
+        ("polygon-mainnet.g.alchemy.com", "polygon-mainnet"),
+    ):
+        if alchemy_probe(key, host, label):
+            any_pass = True
+    print(
+        "ALCHEMY VERDICT: %s"
+        % ("KEY VALID (at least one network answered)" if any_pass else "see lines above"),
+        flush=True,
+    )
 
 
 def check_chainstack():
@@ -70,9 +88,7 @@ def check_chainstack():
         )
         status, body = http(req)
         if status == 200:
-            print(
-                "CHAINSTACK: PASS (http 200 on /v1/%s)" % path, flush=True
-            )
+            print("CHAINSTACK: PASS (http 200 on /v1/%s)" % path, flush=True)
             return
         if status is None:
             print(
@@ -81,15 +97,14 @@ def check_chainstack():
             )
             return
         print(
-            "CHAINSTACK: http %s on /v1/%s body: %s"
-            % (status, path, brief(body)),
+            "CHAINSTACK: http %s on /v1/%s body: %s" % (status, path, brief(body)),
             flush=True,
         )
     print("CHAINSTACK: FAIL (no 200 on either endpoint)", flush=True)
 
 
 def main():
-    print("key health check v2 starting", flush=True)
+    print("key health check v3 starting", flush=True)
     check_alchemy()
     check_chainstack()
     print("HEALTH-CHECK DONE", flush=True)
