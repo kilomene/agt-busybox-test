@@ -25,54 +25,47 @@ def brief(body, limit=200):
     return body[:limit]
 
 
-def alchemy_probe(key, host, label):
-    req = urllib.request.Request(
-        "https://" + host + "/v2/" + key,
-        data=json.dumps(
-            {"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}
-        ).encode(),
-        headers={"Content-Type": "application/json", **UA},
-        method="POST",
-    )
-    status, body = http(req)
-    if status == 200:
-        try:
-            ok = "result" in json.loads(body)
-        except Exception:
-            ok = False
-        print(
-            "ALCHEMY %s: %s (http 200)" % (label, "PASS" if ok else "FAIL no-result"),
-            flush=True,
-        )
-        return ok
-    if status is None:
-        print("ALCHEMY %s: ERROR (network: %s)" % (label, body), flush=True)
-        return False
-    print(
-        "ALCHEMY %s: FAIL (http %s) body: %s" % (label, status, brief(body)),
-        flush=True,
-    )
-    return False
-
-
-def check_alchemy():
+def check_alchemy_solana():
     key = os.environ.get("ALCHEMY_KEY", "")
     if not key:
         print("ALCHEMY: MISSING (secret not injected)", flush=True)
         return
-    any_pass = False
-    for host, label in (
-        ("eth-mainnet.g.alchemy.com", "eth-mainnet"),
-        ("eth-sepolia.g.alchemy.com", "eth-sepolia"),
-        ("polygon-mainnet.g.alchemy.com", "polygon-mainnet"),
-    ):
-        if alchemy_probe(key, host, label):
-            any_pass = True
-    print(
-        "ALCHEMY VERDICT: %s"
-        % ("KEY VALID (at least one network answered)" if any_pass else "see lines above"),
-        flush=True,
-    )
+    for method, params in (("getHealth", []), ("getSlot", [])):
+        req = urllib.request.Request(
+            "https://solana-mainnet.g.alchemy.com/v2/" + key,
+            data=json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+            ).encode(),
+            headers={"Content-Type": "application/json", **UA},
+            method="POST",
+        )
+        status, body = http(req)
+        if status == 200:
+            try:
+                parsed = json.loads(body)
+                ok = "result" in parsed and "error" not in parsed
+            except Exception:
+                ok = False
+            print(
+                "ALCHEMY solana-mainnet %s: %s (http 200, body: %s)"
+                % (method, "PASS" if ok else "FAIL", brief(body, 120)),
+                flush=True,
+            )
+            if ok:
+                print("ALCHEMY VERDICT: PASS (Solana mainnet answered)", flush=True)
+                return
+        elif status is None:
+            print(
+                "ALCHEMY solana-mainnet %s: ERROR (network: %s)" % (method, body),
+                flush=True,
+            )
+        else:
+            print(
+                "ALCHEMY solana-mainnet %s: FAIL (http %s) body: %s"
+                % (method, status, brief(body)),
+                flush=True,
+            )
+    print("ALCHEMY VERDICT: see lines above", flush=True)
 
 
 def check_chainstack():
@@ -104,8 +97,8 @@ def check_chainstack():
 
 
 def main():
-    print("key health check v3 starting", flush=True)
-    check_alchemy()
+    print("key health check v4 starting", flush=True)
+    check_alchemy_solana()
     check_chainstack()
     print("HEALTH-CHECK DONE", flush=True)
     while True:
